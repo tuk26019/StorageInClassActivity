@@ -26,6 +26,7 @@ import java.io.FileOutputStream
 // TODO (2: Add function saveComic(...) to save and load comic info automatically when app starts)
 
 private const val AUTO_SAVE_KEY = "auto_save"
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var requestQueue: RequestQueue
@@ -40,8 +41,7 @@ class MainActivity : AppCompatActivity() {
 
     private val internalFileName = "comic_info"
     private lateinit var file: File
-    private lateinit var textBox: EditText
-    private lateinit var checkBox: CheckBox
+    private var comicImageUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,40 +61,33 @@ class MainActivity : AppCompatActivity() {
         showButton.setOnClickListener {
             downloadComic(numberEditText.text.toString())
         }
-        if(/*file exists*/){
-            showComic(loadComic())
-        }
 
-        autoSave = preferences.getBoolean(AUTO_SAVE_KEY, false)
-        textBox = findViewById(R.id.comicDescriptionTextView)
-        checkBox = findViewById(R.id.comicImageView)
-
-        checkBox.isChecked = autoSave
-        autoSave = preferences.getBoolean(AUTO_SAVE_KEY, false)
-
-        if (autoSave && file.exists()) {
-            try {
-                val br = BufferedReader(FileReader(file))
-                val text = StringBuilder()
-                var line: String?
-                while (br.readLine().also { line = it } != null) {
-                    text.append(line)
-                    text.append('\n')
-                }
-                br.close()
-                textBox.setText(text.toString())
-            } catch (e: IOException) {
-                e.printStackTrace()
+        if (savedInstanceState != null) {
+            // Restore the state
+            titleTextView.text = savedInstanceState.getString("comicTitle")
+            descriptionTextView.text = savedInstanceState.getString("comicDescription")
+            comicImageUrl = savedInstanceState.getString("comicImageUrl")
+            if (comicImageUrl != null) {
+                Picasso.get().load(comicImageUrl).into(comicImageView)
+            }
+        } else if (file.exists()) {
+            // Load the comic if the file exists and the activity is not being recreated
+            val comicObject = loadComic()
+            if (comicObject != null) {
+                showComic(comicObject)
             }
         }
 
-        checkBox.setOnCheckedChangeListener { _, isChecked ->
-            autoSave = isChecked
+        autoSave = preferences.getBoolean(AUTO_SAVE_KEY, false)
+    }
 
-            // Update shared preferences when toggled
-            val editor = preferences.edit()
-            editor.putBoolean(AUTO_SAVE_KEY, autoSave)
-            editor.apply()
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Save the comic title, description, and image URL
+        outState.putString("comicTitle", titleTextView.text.toString())
+        outState.putString("comicDescription", descriptionTextView.text.toString())
+        if (comicImageUrl != null) {
+            outState.putString("comicImageUrl", comicImageUrl)
         }
     }
 
@@ -102,30 +95,44 @@ class MainActivity : AppCompatActivity() {
         val url = "https://xkcd.com/$comicId/info.0.json"
         requestQueue.add(
             JsonObjectRequest(url, { showComic(it)
-                                    saveComic(it) }, {
+                saveComic(it) }, {
             })
         )
-
     }
 
     private fun showComic(comicObject: JSONObject) {
         titleTextView.text = comicObject.getString("title")
         descriptionTextView.text = comicObject.getString("alt")
-        Picasso.get().load(comicObject.getString("img")).into(comicImageView)
+        comicImageUrl = comicObject.getString("img")
+        Picasso.get().load(comicImageUrl).into(comicImageView)
     }
 
     private fun saveComic(comicObject: JSONObject) {
         if (autoSave) {
             try {
                 val outputStream = FileOutputStream(file)
-                outputStream.write(textBox.text.toString().toByteArray())
+                outputStream.write(comicObject.toString().toByteArray())
                 outputStream.close()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
-    private fun loadComic(){
 
+    private fun loadComic(): JSONObject? {
+        return try {
+            val br = BufferedReader(FileReader(file))
+            val text = StringBuilder()
+            var line: String?
+            while (br.readLine().also { line = it } != null) {
+                text.append(line)
+                text.append('\n')
+            }
+            br.close()
+            JSONObject(text.toString())
+        } catch (e: IOException) {
+            e.printStackTrace()
+            null
+        }
     }
 }
